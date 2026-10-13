@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schmeckle Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#27224A;--panel:#FFF4D6;--ink:#27224A;--mute:#6E6A8E;--pink:#FF5C8A;--gold:#FFC83D;--green:#1F9D63;--red:#D6304A;--line:#E8D9A8;
+--f:"Bricolage Grotesque",system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#fff;font:16px/1.45 var(--f);
+padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+main{max-width:620px;margin:0 auto;padding:20px 16px 56px}
+h1{font-size:2.2rem;font-weight:800;margin:0;letter-spacing:-.02em}
+.sub{color:#C9C5EA;margin:2px 0 18px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input{font:inherit;padding:10px 12px;border-radius:10px;border:2px solid transparent;background:#fff;color:var(--ink);min-width:0}
+input:focus,button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+button{font:600 1rem var(--f);border:0;border-radius:10px;padding:10px 14px;cursor:pointer;background:var(--gold);color:var(--ink)}
+button.ghost{background:transparent;color:#fff;border:2px solid #5A5490}
+button.small{padding:6px 10px;font-size:.9rem}
+.settings{background:#352F63;border-radius:14px;padding:14px;margin-bottom:18px}
+.settings label{font-size:.9rem;color:#C9C5EA;display:block;margin-bottom:4px}
+.card{background:var(--panel);color:var(--ink);border-radius:18px;padding:16px;margin-bottom:14px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.name{font-weight:800;font-size:1.25rem}
+.bal{font-size:2.8rem;font-weight:800;line-height:1;letter-spacing:-.03em;margin:6px 0 12px}
+.bal.pos{color:var(--green)}.bal.neg{color:var(--red)}
+.bal span{font-size:1.4rem;margin-right:2px}
+.quick{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}
+.quick button{padding:10px 0;background:var(--ink);color:#fff}
+.quick button.plus{background:var(--green)}
+.quick button.minus{background:var(--red)}
+.custom input{flex:1;border:2px solid var(--line)}
+.remove{background:none;color:var(--mute);padding:4px 8px;font-weight:500;font-size:.85rem}
+.add input{flex:1}
+.add button{background:var(--pink);color:#fff}
+h2{font-size:1.3rem;margin:26px 0 8px}
+.log{list-style:none;padding:0;margin:0}
+.log li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #3F3978}
+.log .t{color:#A9A4D6;font-size:.85rem}
+.d-pos{color:#6EE7A8;font-weight:600}.d-neg{color:#FF8FA3;font-weight:600}
+.empty{color:#C9C5EA}
+.foot{margin-top:28px;display:flex;gap:8px;flex-wrap:wrap}
+.hint{color:#A9A4D6;font-size:.85rem;margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Schmeckle Tracker</h1>
+  <p class="sub">Keep score in whatever currency you made up.</p>
+
+  <section class="settings">
+    <div class="row">
+      <div style="flex:2;min-width:140px"><label for="cname">Currency name</label><input id="cname" maxlength="24" style="width:100%"></div>
+      <div style="flex:1;min-width:80px"><label for="csym">Symbol</label><input id="csym" maxlength="3" style="width:100%"></div>
+    </div>
+  </section>
+
+  <div id="players"></div>
+
+  <form class="row add" id="addForm" onsubmit="return false">
+    <input id="newName" placeholder="Add a player or team" maxlength="30" aria-label="New player or team name">
+    <button id="addBtn" type="button">Add</button>
+  </form>
+
+  <h2>History</h2>
+  <div id="history"></div>
+
+  <div class="foot">
+    <button class="ghost small" id="undo">Undo last change</button>
+    <button class="ghost small" id="export">Export backup</button>
+    <button class="ghost small" id="import">Import backup</button>
+    <button class="ghost small" id="reset">Reset all</button>
+    <input type="file" id="file" accept="application/json" hidden>
+  </div>
+  <p class="hint">Scores are saved on this device. Export a backup now and then, especially before clearing browser data.</p>
+</main>
+
+<script>
+const KEY = 'schmeckle-tracker-v1';
+const DEFAULT = { currency: { name: 'Schmeckles', symbol: '$' }, players: [], log: [] };
+let state = load();
+
+function load(){
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { const s = JSON.parse(raw); if (s && s.players && s.currency) return s; }
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(DEFAULT));
+}
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch (e) { alert('Could not save on this device. Export a backup to keep your scores.'); }
+}
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Number(n).toLocaleString();
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+function change(id, delta){
+  const p = state.players.find(x => x.id === id);
+  if (!p || !delta) return;
+  p.balance += delta;
+  state.log.unshift({ t: Date.now(), pid: id, name: p.name, delta });
+  state.log = state.log.slice(0, 200);
+  save(); render();
+}
+
+function render(){
+  const c = state.currency;
+  $('title').textContent = (c.name || 'Schmeckle') + ' Tracker';
+  document.title = $('title').textContent;
+  if (document.activeElement !== $('cname')) $('cname').value = c.name;
+  if (document.activeElement !== $('csym')) $('csym').value = c.symbol;
+
+  $('players').innerHTML = state.players.length ? state.players.map(p => `
+    <article class="card" data-id="${p.id}">
+      <div class="top">
+        <div class="name">${esc(p.name)}</div>
+        <button class="remove" data-act="remove">Remove</button>
+      </div>
+      <div class="bal ${p.balance > 0 ? 'pos' : p.balance < 0 ? 'neg' : ''}"><span>${esc(c.symbol)}</span>${fmt(p.balance)}</div>
+      <div class="quick">
+        ${[-10,-5,-1,1,5,10].map(n => `<button class="${n<0?'minus':'plus'}" data-act="quick" data-n="${n}" aria-label="${n>0?'Add':'Subtract'} ${Math.abs(n)} ${esc(c.name)}">${n>0?'+':''}${n}</button>`).join('')}
+      </div>
+      <div class="row custom">
+        <input type="number" inputmode="numeric" placeholder="Custom amount" aria-label="Custom amount for ${esc(p.name)}">
+        <button class="small" data-act="custom" data-sign="1">Add</button>
+        <button class="small" data-act="custom" data-sign="-1">Subtract</button>
+      </div>
+    </article>`).join('') : '<p class="empty">No players yet. Add one below to start keeping score.</p>';
+
+  $('history').innerHTML = state.log.length ? '<ul class="log">' + state.log.slice(0, 20).map(e => `
+    <li><span>${esc(e.name)} <span class="t">${new Date(e.t).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span></span>
+    <span class="${e.delta > 0 ? 'd-pos' : 'd-neg'}">${e.delta > 0 ? '+' : ''}${fmt(e.delta)} ${esc(c.symbol)}</span></li>`).join('') + '</ul>'
+    : '<p class="empty">Changes will show up here.</p>';
+}
+
+$('players').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  const card = btn.closest('.card'); const id = card.dataset.id;
+  const act = btn.dataset.act;
+  if (act === 'quick') change(id, Number(btn.dataset.n));
+  if (act === 'custom') {
+    const v = Number(card.querySelector('input').value);
+    if (v > 0) change(id, v * Number(btn.dataset.sign));
+  }
+  if (act === 'remove') {
+    const p = state.players.find(x => x.id === id);
+    if (confirm('Remove ' + p.name + ' and their score?')) {
+      state.players = state.players.filter(x => x.id !== id);
+      state.log = state.log.filter(x => x.pid !== id);
+      save(); render();
+    }
+  }
+});
+
+function addPlayer(){
+  const name = $('newName').value.trim(); if (!name) return;
+  state.players.push({ id: uid(), name, balance: 0 });
+  $('newName').value = ''; save(); render();
+}
+$('addBtn').onclick = addPlayer;
+$('newName').addEventListener('keydown', e => { if (e.key === 'Enter') addPlayer(); });
+
+$('cname').addEventListener('input', e => { state.currency.name = e.target.value; save(); render(); });
+$('csym').addEventListener('input', e => { state.currency.symbol = e.target.value; save(); render(); });
+
+$('undo').onclick = () => {
+  const last = state.log.shift(); if (!last) return;
+  const p = state.players.find(x => x.id === last.pid);
+  if (p) p.balance -= last.delta;
+  save(); render();
+};
+$('export').onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'schmeckle-tracker-backup.json';
+  a.click(); URL.revokeObjectURL(a.href);
+};
+$('import').onclick = () => $('file').click();
+$('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const s = JSON.parse(r.result);
+      if (!s.players || !s.currency) throw new Error('bad file');
+      if (confirm('Replace your current scores with this backup?')) { state = s; save(); render(); }
+    } catch (err) { alert('That file is not a Schmeckle Tracker backup.'); }
+  };
+  r.readAsText(f); e.target.value = '';
+};
+$('reset').onclick = () => {
+  if (confirm('Delete all players, scores, and history?')) { state = JSON.parse(JSON.stringify(DEFAULT)); save(); render(); }
+};
+
+render();
+</script>
+</body>
+</html>
